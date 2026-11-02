@@ -1,0 +1,42 @@
+# tkn-genai-chat-archiver configuration
+# Paths below are examples. Replace them with your own folders.
+schema_version: "1.0.0"
+
+# Run logs and reports (not the archive itself).
+# logs_root: ~/.tkn/genai_chat_archiver/state/logs
+# reports_root: ~/.tkn/genai_chat_archiver/state/reports
+
+defaults:
+  settle_seconds: 600   # skip files modified within this many seconds
+  read_only: true       # mark stored versions and finished manifests read-only
+
+targets:
+  codex-my-pc-windows:
+    profile: codex
+    source_root: ~/.codex
+    archive_root: C:\path\to\sources\softwares\Codex\chatLogs\my-pc-windows
+    device_id: 2023 Example PC
+    environment: windows
+
+  # codex-my-pc-wsl:
+  #   profile: codex
+  #   source_root: \\wsl.localhost\Ubuntu\home\example\.codex
+  #   archive_root: C:\path\to\sources\softwares\Codex\chatLogs\my-pc-wsl
+  #   device_id: 2023 Example PC
+  #   environment: wsl:Ubuntu
+  #   optional: true
+
+  # claude-code-my-pc-windows:
+  #   profile: claude-code
+  #   archive_root: C:\path\to\sources\softwares\Claude Code\chatLogs\my-pc-windows
+  #   device_id: 2023 Example PC
+
+  # antigravity-my-pc-windows:
+  #   profile: antigravity
+  #   archive_root: C:\path\to\sources\softwares\Antigravity\chatLogs\my-pc-windows
+  #   device_id: 2023 Example PC
+
+  # vscode-chat-my-pc-windows:
+  #   profile: vscode-chat
+  #   archive_root: C:\path\to\sources\softwares\Visual Studio Code\chatLogs\my-pc-windows
+  #   device_id: 2023 Example PC
