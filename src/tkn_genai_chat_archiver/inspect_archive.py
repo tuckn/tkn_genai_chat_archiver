@@ -20,8 +20,14 @@ def target_status(config: AppConfig, target: TargetConfig) -> dict[str, Any]:
         "targetId": target.target_id,
         "profile": target.profile.name,
         "enabled": target.enabled,
-        "sourceRoot": str(target.source_root),
-        "sourceAvailable": os.path.isdir(os_path(target.source_root)),
+        "sources": [
+            {
+                **({"name": root.name} if root.name else {}),
+                "path": str(root.path),
+                "available": os.path.isdir(os_path(root.path)),
+            }
+            for root in target.source_roots
+        ],
         "archiveRoot": str(target.archive_root),
         "status": "success",
     }

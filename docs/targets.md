@@ -73,23 +73,54 @@
 
 取得しないもの：`bin/`・`builtin/`・`lib/`・`mcp/`・`sidecar_data/`（アプリ本体と同梱物）、`log/`・`crashes/`・`cli.log`（アプリのログ）、`cache/`、`updater/`、`settings.json`、`installation_id`、`~/.gemini/config/`（プラグイン・Skill）。
 
-## 5. VS Codeのチャット（`vscode-chat`）
+## 5. GitHub Copilot（`github-copilot`）
 
-取得元：`%APPDATA%\Code\User`。VS Code Insidersは `%APPDATA%\Code - Insiders\User` を別のtargetにします。
+GitHub Copilotは、使う場所によって会話を2か所に保存します。1つのtargetで両方を取り、保存先の中を取得元の名前（`vscode/`・`cli/`）で分けます（[データ契約](data-contract.md)の「複数の取得元」）。
+
+| 取得元の名前 | 既定の場所 | 書き込むもの |
+| --- | --- | --- |
+| `vscode` | `%APPDATA%\Code\User` | VS CodeのCopilot Chat |
+| `cli` | `~/.copilot`（環境変数 `COPILOT_HOME` で変えている場合はその場所） | GitHub Copilot CLI。VS Codeの「エージェントのセッション」に出るCopilot CLIのセッションもここ |
+
+VS Code Insidersを使う場合は、`source_roots` に `vscode-insiders: "%APPDATA%\\Code - Insiders\\User"` を足します（取得範囲は `vscode*/` で始まるので、そのまま当てはまります）。片方の取得元がない（例：CLIを入れていない）場合は、警告を出して残りを取ります。
+
+VS Codeのチャット欄の履歴はVS Code本体の領域に保存され、Copilot Chatの拡張機能も自分の領域に会話の記録を置きます。一方、CodexやClaude CodeのVS Code拡張は、それぞれ `~/.codex`・`~/.claude` の会話を表示するだけで、VS Codeの領域には保存しません。そのため、VS Codeの領域のチャットは、実質的にCopilot Chatの会話です。
 
 | 取得する | 内容 |
 | --- | --- |
-| `workspaceStorage/*/chatSessions/**` | ワークスペースごとのチャット（`.jsonl`、古い版は `.json`） |
-| `workspaceStorage/*/chatEditingSessions/**` | チャットからの編集の記録 |
-| `workspaceStorage/*/workspace.json` | そのフォルダ名（ハッシュ）がどのワークスペースかを示す |
-| `globalStorage/emptyWindowChatSessions/**` | フォルダを開いていないウィンドウでのチャット |
+| `vscode*/workspaceStorage/*/chatSessions/**` | ワークスペースごとのチャット（`.jsonl`、古い版は `.json`）。チャット欄を開いただけで、発言のない空のセッションもできる |
+| `vscode*/workspaceStorage/*/chatEditingSessions/**` | チャットからの編集の記録 |
+| `vscode*/workspaceStorage/*/GitHub.copilot-chat/transcripts/**` | Copilot Chatの会話の記録 |
+| `vscode*/workspaceStorage/*/GitHub.copilot-chat/chat-session-resources/**` | 本文に収まらない長いツール結果 |
+| `vscode*/workspaceStorage/*/GitHub.copilot-chat/debug-logs/**` | セッションごとの処理の記録（`models.json` を除く） |
+| `vscode*/workspaceStorage/*/workspace.json` | そのフォルダ名（ハッシュ）がどのワークスペースかを示す。同じフォルダに保存するチャットがある場合だけ取る（`companion_include`） |
+| `vscode*/globalStorage/emptyWindowChatSessions/**` | フォルダを開いていないウィンドウでのチャット |
+| `vscode*/globalStorage/github.copilot-chat/session-store.db` | Copilot Chatのセッションの索引（SQLite） |
+| `cli/session-state/**` | 会話ごとのフォルダ（`events.jsonl`・`workspace.yaml`・`session.db`・チェックポイント・巻き戻し用の記録） |
+| `cli/history-session-state/**` | 古い版のCLIの会話（1会話1つのJSON） |
+| `cli/session-store.db`・`cli/data.db` | 会話一覧・検索用の索引と、アプリの状態（SQLite） |
+| `cli/attachments/**` | 会話に貼り付けた画像など |
+| `cli/command-history-state.json` | 入力履歴 |
+| `cli/sidebar-sessions-state/**`・`cli/vscode.session.metadata.cache.json` | VS Codeとの連携で使うセッションの情報 |
 
-取得しないもの：`workspaceStorage/*/state.vscdb`（ワークスペースのUI状態全体のSQLite。チャットの一覧も含む）、`globalStorage/github.copilot-chat/**`（拡張機能のキャッシュなど）、`History/`、`settings.json`。
+| 除外する | 理由 |
+| --- | --- |
+| `**/*.lock`、`**/.session-operation-locks/**` | ロック |
+| `**/debug-logs/*/models.json` | 使えるモデルの一覧（1つ約54 KB）で、会話ではない |
+| `**/*-wal`、`**/*-shm`、`**/*-journal` | SQLiteのバックアップに含まれる |
+
+取得しないもの：`workspaceStorage/*/state.vscdb`（ワークスペースのUI状態全体）、`workspaceStorage/*/GitHub.copilot-chat/codebase-external.sqlite`（コードの索引）、`globalStorage/github.copilot-chat/` のその他（埋め込みのキャッシュ・同梱のエージェント定義など）、`~/.copilot` の `logs/`・`config.json`・`settings.json`・`ide/`・`hooks/`・`run/`・`repo-metadata-cache.db`・`data.db.pre-update-backup-*`（更新前にアプリが作るDBのコピー）。
+
+Visual StudioやJetBrains IDEのCopilotの保存場所は、まだ調べていません。
+
+### 5.1. `vscode-chat`（旧profile）
+
+VS Codeの領域だけを取る最初のprofileです。`GitHub.copilot-chat/` の会話の記録を含まず、`workspace.json` も全ワークスペースの分を取ります。新しく使う場合は `github-copilot` を使ってください。すでにこのprofileで作ったアーカイブを読むために残しています。
 
 ## 6. 今後の候補
 
 | 候補 | 取得元 | 内容 |
 | --- | --- | --- |
-| GitHub Copilot CLI | `~/.copilot` | `session-state/<id>/`（`events.jsonl`・`workspace.yaml`・チェックポイント・`session.db`）、`data.db`（SQLite） |
+| Visual Studio・JetBrains IDEのCopilot | — | 保存場所は未調査 |
 | Ollama | — | 既定ではチャット履歴をファイルに残さない |
 | ChatGPT Web・claude.ai | — | クラウドにだけあるため対象外 |

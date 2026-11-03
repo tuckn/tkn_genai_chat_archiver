@@ -68,6 +68,8 @@ class ScannedFile:
     path: str
     byte_count: int
     modified_ns: int
+    root_name: str = ""
+    root_path: str = ""
 
 
 @dataclass
@@ -77,11 +79,44 @@ class ScanResult:
     unreadable_dirs: list[str] = field(default_factory=list)
     links: list[str] = field(default_factory=list)
     excluded: int = 0
+    unavailable_roots: list[dict[str, str]] = field(default_factory=list)
+    # Companion files present at the source but not selected this time (still present, so not missing).
+    dropped_companions: set[str] = field(default_factory=set)
 
 
-def scan_source(root: Path, patterns: PatternSet) -> ScanResult:
+def scan_target(target: TargetConfig, patterns: PatternSet) -> ScanResult:
+    """Scan every source folder of a target; relative paths of named roots start with the root name."""
+
     result = ScanResult()
-    stack: list[tuple[str, str]] = [("", os_path(root))]
+    for root in target.source_roots:
+        if not os.path.isdir(os_path(root.path)):
+            result.unavailable_roots.append({"name": root.name, "path": str(root.path)})
+            result.unreadable_dirs.append(root.name)
+            continue
+        scan_source(root.path, patterns, prefix=root.name, result=result)
+    if target.companion_include:
+        companions = PatternSet(target.companion_include, (), case_insensitive=IS_WINDOWS)
+        folders: set[str] = set()
+        for item in result.files:
+            if companions.selects(item.relative_path):
+                continue
+            parts = item.relative_path.split("/")
+            folders.update("/".join(parts[:index]) for index in range(1, len(parts)))
+        kept = []
+        for item in result.files:
+            parent = item.relative_path.rsplit("/", 1)[0] if "/" in item.relative_path else ""
+            if companions.selects(item.relative_path) and parent not in folders:
+                result.dropped_companions.add(item.relative_path)
+                continue
+            kept.append(item)
+        result.files = kept
+    result.files.sort(key=lambda item: item.relative_path)
+    return result
+
+
+def scan_source(root: Path, patterns: PatternSet, *, prefix: str = "", result: ScanResult | None = None) -> ScanResult:
+    result = result if result is not None else ScanResult()
+    stack: list[tuple[str, str]] = [(prefix, os_path(root))]
     while stack:
         relative_dir, absolute_dir = stack.pop()
         try:
@@ -112,7 +147,7 @@ def scan_source(root: Path, patterns: PatternSet) -> ScanResult:
             except OSError as exc:
                 result.errors.append({"relativePath": relative, "error": str(exc)})
                 continue
-            result.files.append(ScannedFile(relative, entry.path, info.st_size, info.st_mtime_ns))
+            result.files.append(ScannedFile(relative, entry.path, info.st_size, info.st_mtime_ns, prefix, str(root)))
     result.files.sort(key=lambda item: item.relative_path)
     return result
 
@@ -236,7 +271,7 @@ class TargetRun:
         return sha if (item.relative_path, sha) in self.index.pairs else None
 
     def base_record(self, item: ScannedFile) -> dict[str, Any]:
-        return {
+        record: dict[str, Any] = {
             "schemaVersion": MANIFEST_SCHEMA_VERSION,
             "recordType": "version",
             "recordId": str(uuid.uuid4()),
@@ -247,10 +282,12 @@ class TargetRun:
             "deviceId": self.target.device_id,
             "environment": self.target.environment,
             "hostName": self.host_name,
-            "sourceRoot": str(self.target.source_root),
-            "sourcePath": plain_path(item.path),
-            "relativePath": item.relative_path,
+            "sourceRoot": item.root_path or str(self.target.source_root),
         }
+        if item.root_name:
+            record["sourceRootName"] = item.root_name
+        record.update(sourcePath=plain_path(item.path), relativePath=item.relative_path)
+        return record
 
     def previous_of(self, relative: str) -> VersionRef | None:
         history = self.index.paths.get(relative)
@@ -517,7 +554,7 @@ def _process(run: TargetRun, item: ScannedFile) -> None:
 
 
 def _record_missing(run: TargetRun, scan: ScanResult) -> None:
-    seen = {item.relative_path for item in scan.files}
+    seen = {item.relative_path for item in scan.files} | scan.dropped_companions
     for relative, history in sorted(run.index.paths.items()):
         if history.missing or history.latest is None or relative in seen or not run.patterns.selects(relative):
             continue
@@ -631,14 +668,20 @@ def capture_target(config: AppConfig, target: TargetConfig, options: CaptureOpti
         "targetId": target.target_id,
         "profile": target.profile.name,
         "software": target.profile.software,
-        "sourceRoot": str(target.source_root),
+        **(
+            {"sourceRoots": {root.name: str(root.path) for root in target.source_roots}}
+            if target.multi_root
+            else {"sourceRoot": str(target.source_root)}
+        ),
         "archiveRoot": str(target.archive_root),
         "status": "failed",
     }
-    if not os.path.isdir(os_path(target.source_root)):
+    available = [root for root in target.source_roots if os.path.isdir(os_path(root.path))]
+    if not available:
         result["status"] = "skipped" if target.optional else "failed"
         result["reason"] = "source-unavailable"
-        result["error"] = f"source folder is not available: {target.source_root}"
+        folders = ", ".join(str(root.path) for root in target.source_roots)
+        result["error"] = f"source folder is not available: {folders}"
         log = LOGGER.warning if target.optional else LOGGER.error
         log("%s: %s", target.target_id, result["error"])
         return result
@@ -699,9 +742,14 @@ def _run_target(
     )
     if not options.dry_run and os.path.isdir(os_path(run.staging_dir)):
         shutil.rmtree(os_path(run.staging_dir), ignore_errors=True)
-    LOGGER.info("%s: scanning %s", target.target_id, target.source_root)
-    scan = scan_source(target.source_root, run.patterns)
-    run.counts["excluded"] += scan.excluded
+    LOGGER.info("%s: scanning %s", target.target_id, ", ".join(str(root.path) for root in target.source_roots))
+    scan = scan_target(target, run.patterns)
+    for root in scan.unavailable_roots:
+        # Another folder of this target is available; a missing one (e.g. an unused CLI) is not a failure.
+        message = f"source folder {root['name']} is not available: {root['path']}"
+        run.warnings.append(message)
+        LOGGER.warning("%s: %s", target.target_id, message)
+    run.counts["excluded"] += scan.excluded + len(scan.dropped_companions)
     run.counts["links"] = len(scan.links)
     for error in scan.errors:
         run.fail(error["relativePath"], f"cannot read: {error['error']}")

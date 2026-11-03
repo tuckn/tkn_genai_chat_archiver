@@ -25,7 +25,10 @@ flowchart LR
 | `codex` | Codex（CLI・デスクトップアプリ） | `~/.codex` | `sessions/`、`archived_sessions/`、チャット名の索引、アプリの状態 |
 | `claude-code` | Claude Code（CLI・デスクトップのCodeタブ・IDE拡張） | `~/.claude` | `projects/` 全体（会話、サブエージェント、長いツール結果、タイトル、memory） |
 | `antigravity` | Antigravity（IDE・CLI） | `~/.gemini` | `antigravity*/brain/`、`antigravity*/conversations/`（SQLite）など |
-| `vscode-chat` | VS Codeのチャット（GitHub Copilot Chatなど） | `%APPDATA%\Code\User` | `workspaceStorage/*/chatSessions/` など |
+| `github-copilot` | GitHub Copilot（VS CodeのCopilot Chat・Copilot CLI） | `vscode`：`%APPDATA%\Code\User`、`cli`：`~/.copilot` | VS Codeの `chatSessions/`・`GitHub.copilot-chat/transcripts/` など、CLIの `session-state/` など |
+| `vscode-chat` | 旧profile。VS Codeのチャットだけ（`github-copilot` に置き換え） | `%APPDATA%\Code\User` | `workspaceStorage/*/chatSessions/` など |
+
+VS Codeのチャット欄の履歴は実質的にCopilot Chatの会話なので、`github-copilot` がVS Code側とCLI側をまとめて取ります。CodexやClaude CodeのVS Code拡張は、それぞれ `~/.codex`・`~/.claude` の会話を表示するだけなので、`codex`・`claude-code` で取れます。
 
 WSL内のアプリは、`\\wsl.localhost\<distro>\home\<user>\.codex` を取得元とする別のtargetとして登録します。各profileの取得範囲と、取得しないものの理由は [対象アプリごとの取得範囲](docs/targets.md) を参照してください。
 
@@ -80,10 +83,19 @@ targets:
     archive_root: C:\path\to\sources\softwares\Claude Code\chatLogs\my-pc-windows
     device_id: 2023 Example PC
     environment: windows
+  github-copilot-my-pc-windows:
+    profile: github-copilot
+    source_roots:                      # 取得元が複数。保存先では vscode/・cli/ に分かれる
+      vscode: "%APPDATA%\\Code\\User"
+      cli: ~/.copilot
+    archive_root: C:\path\to\sources\softwares\GitHub Copilot\chatLogs\my-pc-windows
+    device_id: 2023 Example PC
+    environment: windows
 ```
 
 - `archive_root` は `<保存先>\<Software Name>\chatLogs\<Computer Name>` の形を想定しています。`source_id`（manifestに記録する取得環境のID）は、省略すると `archive_root` の末尾のフォルダ名になります。
-- profileの取得範囲は `include` と `exclude` で置き換えられます。見送りの待ち時間を外すファイルは `settle_exempt` で置き換えられます。実際に使われる一覧は `config show --target <id>` で確認できます。
+- profileの取得範囲は `include` と `exclude` で置き換えられます。見送りの待ち時間を外すファイルは `settle_exempt`、同じフォルダにほかのファイルがあるときだけ取るファイルは `companion_include` で置き換えられます。実際に使われる一覧は `config show --target <id>` で確認できます。
+- `source_roots` を使うprofile（`github-copilot`）では、取得元の追加（例：`vscode-insiders`）や削除ができます。取得元の一部が見つからない場合は警告だけで、残りを取ります。
 - `enabled: false` のtargetは通常の実行では処理しません。`capture --dry-run --target <id>` を明示すれば、予定だけを確認できます。保存先のフォルダ（例：クラウドに同期するフォルダへのリンク）を用意してから有効にする場合に使います。
 - 1つの `archive_root` には1つのtargetだけが書き込みます。複数のtargetで同じ保存先を指定すると、設定の検証で止まります。
 

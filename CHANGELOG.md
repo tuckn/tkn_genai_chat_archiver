@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.0
+
+- New profile `github-copilot`: GitHub Copilot Chat in VS Code (`vscode`) and GitHub Copilot CLI (`cli`) in one archive. It adds Copilot Chat's own transcripts, long tool results and session debug logs, which `vscode-chat` did not capture.
+- Targets can read several named source folders (`source_roots`). Their relative paths start with the folder name, and version records carry `sourceRootName`. A missing folder is a warning while another folder is available.
+- `companion_include`: files such as VS Code's `workspace.json` are stored only when their folder holds other stored files.
+- `vscode-chat` is kept for existing archives and superseded by `github-copilot`.
+
 ## 0.1.0
 
 - First release.

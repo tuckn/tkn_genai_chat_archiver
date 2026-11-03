@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "tkn-genai-chat-archiver"
-version = "0.1.0"
+version = "0.2.0"
 description = "Keep byte-exact, versioned snapshots of local generative AI chat logs without inference."
 readme = "README.md"
 requires-python = ">=3.11"

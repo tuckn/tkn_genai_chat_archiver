@@ -1,6 +1,6 @@
 # データ契約：アーカイブの構成とmanifest
 
-CLI 0.1.0 · manifest・マーカー `schemaVersion` 1.0.0 · 設定 `schema_version` 1.0.0
+CLI 0.2.0 · manifest・マーカー `schemaVersion` 1.0.0 · 設定 `schema_version` 1.0.0
 
 アーカイブを読む側のツール（検索用の変換、ノート作成など）と、このCLIとの間のファイルの約束を定めます。操作方法は [README](../README.md)、アプリごとの取得範囲は [対象アプリごとの取得範囲](targets.md) を参照してください。
 
@@ -8,11 +8,17 @@ CLI 0.1.0 · manifest・マーカー `schemaVersion` 1.0.0 · 設定 `schema_ver
 
 | 用語 | 意味 |
 | --- | --- |
-| target | 設定の1項目。1つの取得元（`source_root`）と1つの保存先（`archive_root`）の組 |
-| profile | アプリごとの既定の取得範囲（`codex`、`claude-code`、`antigravity`、`vscode-chat`） |
-| 相対パス（`relativePath`） | `source_root` からのパス。区切りは `/` |
+| target | 設定の1項目。1つ以上の取得元（`source_root` または `source_roots`）と、1つの保存先（`archive_root`）の組 |
+| profile | アプリごとの既定の取得範囲（`codex`、`claude-code`、`antigravity`、`github-copilot`、旧 `vscode-chat`） |
+| 相対パス（`relativePath`） | 取得元からのパス。区切りは `/`。取得元が複数のtargetでは、先頭に取得元の名前が付く（1.1節） |
 | 版（version） | ある相対パスで、ある時点に保存したバイト列。`(relativePath, sha256)` で識別する |
 | 実行（run） | 1回の `capture` または `legacy adopt`。`runId` は開始時刻のローカル日時（例：`20261102T030012+0900`） |
+
+### 1.1. 複数の取得元
+
+1つのソフトが複数の場所に会話を書く場合（例：GitHub CopilotのVS Code側とCLI側）、`source_roots` で名前付きの取得元を並べます。このとき、`relativePath` は `<取得元の名前>/<取得元からのパス>`（例：`cli/session-state/<id>/events.jsonl`）になり、版のレコードには `sourceRootName` と、その取得元の `sourceRoot` が入ります。取得元が1つのtarget（`source_root`）では、名前は付きません。
+
+`companion_include` に一致するファイル（例：VS Codeの `workspace.json`）は、同じフォルダの下に保存するほかのファイルがある場合だけ保存します。保存しなかった回も、取得元にあるので `sourceMissing` にはしません。
 
 ## 2. アーカイブの構成
 
@@ -98,7 +104,8 @@ manifestはUTF-8（BOMなし）のJSON Linesです。全レコードに `schemaV
 | 項目 | 内容 |
 | --- | --- |
 | `sourcePath` | 取得時の元ファイルの絶対パス |
-| `relativePath` | `sourceRoot` からの相対パス（`/` 区切り）。版の識別に使う |
+| `relativePath` | `sourceRoot` からの相対パス（`/` 区切り）。取得元が複数なら先頭に `sourceRootName` が付く。版の識別に使う |
+| `sourceRootName` | 取得元が複数のtargetだけ。その取得元の名前（例：`vscode`、`cli`） |
 | `storedPath` | `archive-root` からの保存場所（`/` 区切り） |
 | `deviceId`・`environment`・`hostName` | 機器の識別。`deviceId` は設定の安定した名前、`hostName` は取得時に観測したコンピューター名 |
 | `captureMethod` | `copy`（バイト列のコピー）、`sqlite-backup`（3.3節）、`legacy-import`（3.5節） |

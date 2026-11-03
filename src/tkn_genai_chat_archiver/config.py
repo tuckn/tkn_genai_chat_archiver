@@ -33,6 +33,7 @@ TARGET_KEYS = {
     "enabled",
     "optional",
     "source_root",
+    "source_roots",
     "archive_root",
     "source_id",
     "device_id",
@@ -41,6 +42,7 @@ TARGET_KEYS = {
     "exclude",
     "settle_seconds",
     "settle_exempt",
+    "companion_include",
     "read_only",
 }
 
@@ -64,12 +66,20 @@ def expand_path(text: str) -> Path:
 
 
 @dataclass(frozen=True)
+class SourceRoot:
+    """A source folder. With several roots, relative paths start with `name/`."""
+
+    name: str
+    path: Path
+
+
+@dataclass(frozen=True)
 class TargetConfig:
     target_id: str
     profile: Profile
     enabled: bool
     optional: bool
-    source_root: Path
+    source_roots: tuple[SourceRoot, ...]
     archive_root: Path
     source_id: str
     device_id: str
@@ -78,7 +88,18 @@ class TargetConfig:
     exclude: tuple[str, ...]
     settle_seconds: int
     settle_exempt: tuple[str, ...]
+    companion_include: tuple[str, ...]
     read_only: bool
+
+    @property
+    def source_root(self) -> Path:
+        """The only source folder of a single-root target (the first one otherwise)."""
+
+        return self.source_roots[0].path
+
+    @property
+    def multi_root(self) -> bool:
+        return any(root.name for root in self.source_roots)
 
     @property
     def patterns(self) -> PatternSet:
@@ -91,7 +112,11 @@ class TargetConfig:
             "software": self.profile.software,
             "enabled": self.enabled,
             "optional": self.optional,
-            "sourceRoot": str(self.source_root),
+            **(
+                {"sourceRoots": {root.name: str(root.path) for root in self.source_roots}}
+                if self.multi_root
+                else {"sourceRoot": str(self.source_root)}
+            ),
             "archiveRoot": str(self.archive_root),
             "sourceId": self.source_id,
             "deviceId": self.device_id,
@@ -100,6 +125,7 @@ class TargetConfig:
             "exclude": list(self.exclude),
             "settleSeconds": self.settle_seconds,
             "settleExempt": list(self.settle_exempt),
+            "companionInclude": list(self.companion_include),
             "readOnly": self.read_only,
         }
 
@@ -201,6 +227,23 @@ def _identifier(value: str, what: str) -> str:
     return value
 
 
+def _source_roots(raw: Mapping[str, Any], profile: Profile, where: str) -> tuple[SourceRoot, ...]:
+    if "source_roots" in raw or (profile.default_source_roots and "source_root" not in raw):
+        if "source_root" in raw:
+            raise ConfigError(f"{where}: use either source_root or source_roots, not both")
+        value = raw.get("source_roots", dict(profile.default_source_roots))
+        if not isinstance(value, Mapping) or not value:
+            raise ConfigError(f"{where}.source_roots must map folder names to paths")
+        roots = []
+        for name, path in value.items():
+            _identifier(str(name), f"{where}.source_roots name")
+            roots.append(SourceRoot(str(name), _absolute(path, f"source_roots.{name}", where)))
+        return tuple(roots)
+    if profile.default_source_roots:
+        raise ConfigError(f"{where}: profile {profile.name} reads several folders; set source_roots")
+    return (SourceRoot("", _absolute(raw.get("source_root", profile.default_source_root), "source_root", where)),)
+
+
 def _target(target_id: str, raw: Any, defaults: Mapping[str, Any]) -> TargetConfig:
     where = f"targets.{target_id}"
     _identifier(target_id, "target id")
@@ -213,7 +256,7 @@ def _target(target_id: str, raw: Any, defaults: Mapping[str, Any]) -> TargetConf
     if profile_name not in PROFILES:
         raise ConfigError(f"{where}.profile must be one of: {', '.join(sorted(PROFILES))}")
     profile = PROFILES[str(profile_name)]
-    source_root = _absolute(raw.get("source_root", profile.default_source_root), "source_root", where)
+    source_roots = _source_roots(raw, profile, where)
     archive_root = _absolute(raw.get("archive_root"), "archive_root", where)
     source_id = _identifier(str(raw.get("source_id") or archive_root.name), f"{where}.source_id")
     device_id = raw.get("device_id")
@@ -227,10 +270,16 @@ def _target(target_id: str, raw: Any, defaults: Mapping[str, Any]) -> TargetConf
     exempt = (
         _patterns(raw["settle_exempt"], "settle_exempt", where) if "settle_exempt" in raw else profile.settle_exempt
     )
+    companions = (
+        _patterns(raw["companion_include"], "companion_include", where)
+        if "companion_include" in raw
+        else profile.companion_include
+    )
     try:
         PatternSet(include, exclude, case_insensitive=IS_WINDOWS)
-        if exempt:
-            PatternSet(exempt, (), case_insensitive=IS_WINDOWS)
+        for extra in (exempt, companions):
+            if extra:
+                PatternSet(extra, (), case_insensitive=IS_WINDOWS)
     except PatternError as exc:
         raise ConfigError(f"{where}: {exc}") from exc
     return TargetConfig(
@@ -238,7 +287,7 @@ def _target(target_id: str, raw: Any, defaults: Mapping[str, Any]) -> TargetConf
         profile=profile,
         enabled=_bool(raw.get("enabled", True), "enabled", where),
         optional=_bool(raw.get("optional", False), "optional", where),
-        source_root=source_root,
+        source_roots=source_roots,
         archive_root=archive_root,
         source_id=source_id,
         device_id=device_id.strip(),
@@ -246,6 +295,7 @@ def _target(target_id: str, raw: Any, defaults: Mapping[str, Any]) -> TargetConf
         include=include,
         exclude=exclude,
         settle_exempt=exempt,
+        companion_include=companions,
         settle_seconds=_seconds(
             raw.get("settle_seconds", defaults.get("settle_seconds", 600)), "settle_seconds", where
         ),
@@ -256,10 +306,9 @@ def _target(target_id: str, raw: Any, defaults: Mapping[str, Any]) -> TargetConf
 def _validate_layout(targets: Mapping[str, TargetConfig]) -> None:
     items = list(targets.values())
     for index, target in enumerate(items):
-        if path_is_within(target.archive_root, target.source_root) or path_is_within(
-            target.source_root, target.archive_root
-        ):
-            raise ConfigError(f"targets.{target.target_id}: archive_root and source_root must not overlap")
+        for root in target.source_roots:
+            if path_is_within(target.archive_root, root.path) or path_is_within(root.path, target.archive_root):
+                raise ConfigError(f"targets.{target.target_id}: archive_root and a source folder must not overlap")
         for other in items[index + 1 :]:
             if path_is_within(target.archive_root, other.archive_root) or path_is_within(
                 other.archive_root, target.archive_root
@@ -268,7 +317,7 @@ def _validate_layout(targets: Mapping[str, TargetConfig]) -> None:
                     f"targets.{target.target_id} and targets.{other.target_id} share or nest archive_root; "
                     "each archive root has exactly one writer"
                 )
-            if other.enabled and path_is_within(target.archive_root, other.source_root):
+            if other.enabled and any(path_is_within(target.archive_root, root.path) for root in other.source_roots):
                 raise ConfigError(f"targets.{target.target_id}: archive_root is inside the source of {other.target_id}")
 
 

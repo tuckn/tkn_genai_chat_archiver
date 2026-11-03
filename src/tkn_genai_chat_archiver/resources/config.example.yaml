@@ -36,7 +36,10 @@ targets:
   #   archive_root: C:\path\to\sources\softwares\Antigravity\chatLogs\my-pc-windows
   #   device_id: 2023 Example PC
 
-  # vscode-chat-my-pc-windows:
-  #   profile: vscode-chat
-  #   archive_root: C:\path\to\sources\softwares\Visual Studio Code\chatLogs\my-pc-windows
+  # github-copilot-my-pc-windows:
+  #   profile: github-copilot
+  #   source_roots:
+  #     vscode: "%APPDATA%\\Code\\User"
+  #     cli: ~/.copilot
+  #   archive_root: C:\path\to\sources\softwares\GitHub Copilot\chatLogs\my-pc-windows
   #   device_id: 2023 Example PC
