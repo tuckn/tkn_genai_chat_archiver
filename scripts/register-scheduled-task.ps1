@@ -7,6 +7,9 @@ Registers a daily Windows Task Scheduler task that runs `tkn-genai-chat-archiver
 
 .EXAMPLE
 .\scripts\register-scheduled-task.ps1 -ConfigPath "C:\path\to\config.yaml" -At '03:00'
+
+.EXAMPLE
+.\scripts\register-scheduled-task.ps1 -TaskPath '\MyTasks\'
 #>
 [CmdletBinding(SupportsShouldProcess)]
 param(
@@ -16,12 +19,19 @@ param(
     # Explicit configuration file. Defaults to the user configuration.
     [string]$ConfigPath,
 
-    [string]$TaskName = 'Tkn-GenAIChatArchiver-Daily',
+    [string]$TaskName = 'TknGenAIChatArchiver_Daily',
 
-    [string]$At = '03:00'
+    # Task Scheduler folder, for example '\MyTasks\'. Defaults to the root folder.
+    [string]$TaskPath = '\',
+
+    [string]$At = '02:00'
 )
 
 $ErrorActionPreference = 'Stop'
+
+# Register-ScheduledTask expects a folder path that starts and ends with a backslash.
+$TaskPath = '\' + $TaskPath.Trim('\')
+if ($TaskPath -ne '\') { $TaskPath += '\' }
 
 if ($ExecutablePath) {
     $executable = (Resolve-Path -LiteralPath $ExecutablePath).Path
@@ -52,17 +62,18 @@ $principal = New-ScheduledTaskPrincipal `
     -RunLevel Limited
 
 $description = 'Archive local generative AI chat logs as byte-exact, versioned snapshots (no inference).'
-if ($PSCmdlet.ShouldProcess($TaskName, "Register daily task at $At`: `"$executable`" $arguments")) {
+if ($PSCmdlet.ShouldProcess("$TaskPath$TaskName", "Register daily task at $At`: `"$executable`" $arguments")) {
     if (-not (Test-Path -LiteralPath $workingDirectory)) {
         New-Item -ItemType Directory -Path $workingDirectory | Out-Null
     }
     Register-ScheduledTask `
         -TaskName $TaskName `
+        -TaskPath $TaskPath `
         -Action $action `
         -Trigger $trigger `
         -Settings $settings `
         -Principal $principal `
         -Description $description `
         -Force | Out-Null
-    Get-ScheduledTask -TaskName $TaskName
+    Get-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath
 }

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- `scripts/register-scheduled-task.ps1`: the default task name is now `TknGenAIChatArchiver_Daily` and the default time 02:00. New `-TaskPath` parameter registers the task in a Task Scheduler folder (default: the root folder).
+
 ## 0.2.0
 
 - New profile `github-copilot`: GitHub Copilot Chat in VS Code (`vscode`) and GitHub Copilot CLI (`cli`) in one archive. It adds Copilot Chat's own transcripts, long tool results and session debug logs, which `vscode-chat` did not capture.
