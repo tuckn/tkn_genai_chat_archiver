@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- New read-only library API `tkn_genai_chat_archiver.view.ArchiveView` for downstream tools: it reads finished manifests only, orders versions by `capturedAt` and `runId`, checks stored size and SHA-256, decodes zstd and gzip and checks the decoded content hash. It writes nothing and takes no lock.
 - `scripts/register-scheduled-task.ps1`: the default task name is now `TknGenAIChatArchiver_Daily` and the default time 02:00. New `-TaskPath` parameter registers the task in a Task Scheduler folder (default: the root folder).
 
 ## 0.2.0

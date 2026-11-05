@@ -201,6 +201,29 @@ manifestはUTF-8（BOMなし）のJSON Linesです。全レコードに `schemaV
 5. 版を参照するときは `(relativePath, sha256)` か `recordId` を使う。`storedPath` は場所であり、識別子ではない。
 6. 形式の違う同じ内容は `content.sha256` で見分ける。
 
+### 4.1. 読み取り用のライブラリ（`ArchiveView`）
+
+Pythonで読む側は、上の約束を実装した `tkn_genai_chat_archiver.view.ArchiveView` を使えます。アーカイブに何も書かず、ロックも取りません。
+
+```python
+from tkn_genai_chat_archiver.view import ArchiveView
+
+view = ArchiveView("C:/path/to/archive", profile="claude-code")  # マーカーの profile・sourceId を確かめる
+for relative_path in view.relative_paths("projects/"):
+    version = view.latest(relative_path)            # capturedAt・runId の順で最後の版
+    data = view.read_content(version)               # サイズ・SHA-256を確かめ、zstd・gzipを展開して返す
+```
+
+| 名前 | 内容 |
+| --- | --- |
+| `ArchiveView(root, profile=None, source_id=None)` | マーカーを読み、確定したmanifestだけから版の一覧を作る。指定した `profile`・`sourceId` と違えば `ArchiveError` |
+| `relative_paths(prefix)`・`versions(path)`・`latest(path)` | 相対パスと、その版（`ArchiveVersion`） |
+| `ArchiveVersion` | `relative_path`・`stored_path`・`sha256`・`byte_count`・`captured_at`・`run_id`・`record_id`・`content_sha256`・`previous_relation`（`appended`・`rewritten`）など。`identity_sha256` は展開後の内容のSHA-256 |
+| `read_stored(version)`・`read_content(version)` | 保存したバイト列・展開後の内容。manifestと一致しなければ `ArchiveError` |
+| `ignored_manifests` | 読まなかった `.partial` と、確定していないmanifest |
+
+作った時点の版の一覧を使います。後の実行の結果を見るには、作り直します。
+
 ## 5. ログとレポート
 
 アーカイブとは別の場所に置きます。
